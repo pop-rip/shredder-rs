@@ -1,21 +1,17 @@
-// Compilar con: cl /Fe:test/test_target.exe test/target_logic.c /link /DYNAMICBASE:NO /FIXED
-// Este código no usa la librería estándar para evitar problemas de RIP-relative en strings.
+// Build: cl /Fe:test/test_target.exe test/target_logic.c /link /DYNAMICBASE:NO /FIXED
+// Note: CRT is avoided to minimize RIP-relative string issues during initial testing.
+
 int main() {
     int a = 5;
     int b = 10;
     int result = 0;
 
-    // Un bucle añade complejidad al Control Flow Graph
+    // Loop added to increase Control Flow Graph (CFG) complexity for the mutator
     for(int i = 0; i < 5; i++) {
         result += (a * i) + b;
     }
 
-    // Resultado esperado: 
-    // i=0: 0+10 = 10
-    // i=1: 5+10 = 15
-    // i=2: 10+10 = 20
-    // i=3: 15+10 = 25
-    // i=4: 20+10 = 30
-    // Total: 10+15+20+25+30 = 100
+    // Expected exit code: 100
+    // Logic: sum of (5*i + 10) for i=0..4 -> 10+15+20+25+30 = 100
     return result; 
 }

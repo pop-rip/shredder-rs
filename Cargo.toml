@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Para desensamblar y re-ensamblar código x64
+# x64 disassembly and re-assembly
 iced-x86 = "1.21.0"
-# Para leer/escribir archivos PE (.exe)
+# PE file parsing and manipulation (.exe)
 exe = "0.5"
 # Error handling
 thiserror = "1"

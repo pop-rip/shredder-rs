@@ -16,12 +16,12 @@ pub struct ParsedPE {
 }
 
 impl ParsedPE {
-    /// Returns the Absolute Virtual Address of the code base.
+    /// Returns the Absolute Virtual Address (VA) of the target code section.
     pub fn get_code_base_va(&self) -> u64 {
         self.image_base + self.section_rva as u64
     }
 
-    /// Resolves the local offset of the EntryPoint relative to the target section.
+    /// Resolves the local offset of the EntryPoint relative to the start of the section.
     pub fn get_local_entry_offset(&self) -> Option<usize> {
         if self.entry_rva >= self.section_rva {
             let diff = (self.entry_rva - self.section_rva) as usize;
@@ -32,7 +32,7 @@ impl ParsedPE {
         None
     }
 
-    /// Calculates the next aligned Virtual Address (PAGE_SIZE alignment).
+    /// Calculates the next available Virtual Address following PAGE_SIZE alignment (4KB).
     pub fn next_available_rva(&self) -> u32 {
         let sections = self.raw_instance.get_section_table().unwrap();
         let max_rva = sections
@@ -41,10 +41,10 @@ impl ParsedPE {
             .max()
             .unwrap_or(0);
 
-        (max_rva + 0xFFF) & !0xFFF // 4KB Alignment
+        (max_rva + 0xFFF) & !0xFFF // 0x1000 Alignment
     }
 
-    /// Calculates the next aligned File Offset (Sector alignment).
+    /// Calculates the next available File Offset following sector alignment (512b).
     pub fn next_available_file_offset(&self) -> u32 {
         let sections = self.raw_instance.get_section_table().unwrap();
         let max_off = sections
@@ -53,18 +53,19 @@ impl ParsedPE {
             .max()
             .unwrap_or(0);
 
-        (max_off + 0x1FF) & !0x1FF // 512b Alignment
+        (max_off + 0x1FF) & !0x1FF // 0x200 Alignment
     }
 }
 
+/// Parses the target binary and enforces x86_64 architecture constraints.
 pub fn parse_pe(target: &Path) -> Result<ParsedPE, ShredderError> {
     let pe = VecPE::from_disk_file(target)
         .map_err(|_| ShredderError::InvalidPE("FileSystem I/O error or invalid access".into()))?;
 
-    // ISA Enforcement
+    // ISA Enforcement: Ensure target is x64
     let arch = pe
         .get_arch()
-        .map_err(|_| ShredderError::InvalidPE("Corrupt NT Headers".into()))?;
+        .map_err(|_| ShredderError::InvalidPE("Corrupt or missing NT Headers".into()))?;
     if arch != exe::Arch::X64 {
         return Err(ShredderError::InvalidPE(
             "Unsupported ISA: Engine requires x86_64 target".into(),
@@ -74,13 +75,13 @@ pub fn parse_pe(target: &Path) -> Result<ParsedPE, ShredderError> {
     let image_base = pe.get_image_base().unwrap_or(0x140000000);
     let entry_rva = pe
         .get_entrypoint()
-        .map_err(|_| ShredderError::InvalidPE("EP resolution failed".into()))?
+        .map_err(|_| ShredderError::InvalidPE("EntryPoint RVA resolution failed".into()))?
         .0;
 
-    // Locate the primary executable container (usually .text)
+    // Locate the primary executable container (logic targeting .text or equivalent)
     let section_table = pe
         .get_section_table()
-        .map_err(|_| ShredderError::InvalidPE("Section table missing".into()))?;
+        .map_err(|_| ShredderError::InvalidPE("Section table missing or malformed".into()))?;
 
     let target_section = section_table
         .iter()
@@ -89,19 +90,22 @@ pub fn parse_pe(target: &Path) -> Result<ParsedPE, ShredderError> {
                 || s.characteristics
                     .contains(SectionCharacteristics::MEM_EXECUTE)
         })
-        .ok_or_else(|| ShredderError::SectionNotFound("No executable payload found".into()))?;
+        .ok_or_else(|| {
+            ShredderError::SectionNotFound("No executable payload section identified".into())
+        })?;
 
     let rva = target_section.virtual_address.0;
     let offset = target_section.pointer_to_raw_data.0 as usize;
     let size = target_section.size_of_raw_data as usize;
 
-    // Boundary check for malformed images
+    // Boundary check to prevent out-of-bounds access on malformed headers
     if offset + size > pe.as_slice().len() {
         return Err(ShredderError::InvalidPE(
-            "Section mapping exceeds physical file size".into(),
+            "Section mapping exceeds physical file dimensions".into(),
         ));
     }
 
+    // Extract section name (handling null-terminated byte strings)
     let name = String::from_utf8_lossy(
         &target_section
             .name

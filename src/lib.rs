@@ -1,9 +1,9 @@
-//! Shredder Engine - Obfuscador de código x86_64
+//! Shredder Engine - x86_64 Code Obfuscation Framework
 //!
-//! Este módulo provee herramientas para:
-//! - Parsear archivos PE (.exe)
-//! - Ofuscar código mediante shredding (fragmentación + junk insertion)
-//! - Reconstruir PEs con código ofuscado
+//! This module provides tools for:
+//! - Parsing PE files (.exe)
+//! - Code obfuscation via shredding (fragmentation + junk insertion)
+//! - Rebuilding PE files with obfuscated payloads
 
 pub mod error;
 pub mod pe_parser;

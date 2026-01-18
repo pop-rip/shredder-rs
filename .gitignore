@@ -2,16 +2,17 @@
 /target/
 Cargo.lock
 
-# Ejecutables y binarios (Muy importante ocultar tus tests)
+# Executables and binary artifacts (ensuring clean test environment)
 *.exe
 *.obj
 *.pdb
 *.bin
+*.o
 
-# Logs y basura de debugging
+# Logs and debug output
 *.txt
 *.log
 
-# Archivos de sistema y carpetas temporales
+# System files and temporary directories
 .DS_Store
 Thumbs.db

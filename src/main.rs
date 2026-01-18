@@ -64,20 +64,20 @@ fn execute_shredding_pipeline(
     output: &Path,
     stealth_mode: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Target Parsing
+    // 1. Target Ingestion and PE Analysis
     let parsed = parse_pe(input)?;
 
-    // 2. Code Acquisition
-    // CAMBIO: Usamos get_local_entry_offset en lugar de entry_offset_in_text
+    // 2. Entry Point Resolution
+    // Resolve entry point offset relative to the .text section start
     let entry_offset = parsed
         .get_local_entry_offset()
         .ok_or("Failed to resolve entry point offset within .text")?;
 
-    // CAMBIO: Usamos section_data en lugar de text_section_bytes
+    // Extract code segment for shredding (Current limit: 512 bytes for testing)
     let code_limit = (entry_offset + 512).min(parsed.section_data.len());
     let code_to_shred = &parsed.section_data[entry_offset..code_limit];
 
-    // 3. Environment Preparation
+    // 3. Pipeline Configuration
     let new_section_rva = parsed.next_available_rva();
     let target_base_ip = parsed.image_base + new_section_rva as u64;
 
@@ -94,15 +94,15 @@ fn execute_shredding_pipeline(
         if stealth_mode { "stealth" } else { "linear" }
     );
 
-    // 4. Mutation Execution
-    // CAMBIO: Usamos get_code_base_va en lugar de code_start_va
+    // 4. Core Mutation Logic
+    // Compute the absolute Virtual Address (VA) for instruction fixups
     let shredded = shred(
         code_to_shred,
         parsed.get_code_base_va() + entry_offset as u64,
         config.clone(),
     )?;
 
-    // 5. Binary Reconstruction
+    // 5. Artifact Reconstruction
     rebuild_pe(&parsed, &shredded, config.base_ip, output)?;
 
     println!("[+] Build successful: {:?}", output);

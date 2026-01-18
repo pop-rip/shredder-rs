@@ -1,4 +1,4 @@
-//! Core Mutation Engine - Polymorphic instruction shredding & context preservation.
+//! Core Mutation Engine - Polymorphic instruction shredding and context preservation.
 use crate::error::ShredderError;
 use iced_x86::{
     BlockEncoder, BlockEncoderOptions, Code, Decoder, DecoderOptions, Instruction,
@@ -19,7 +19,7 @@ impl Default for ShredderConfig {
     fn default() -> Self {
         Self {
             base_ip: 0x10000,
-            block_separation: 0x80, // Tighter packing for shellcode targets
+            block_separation: 0x80,
             junk_count: 3,
             use_junk: false,
         }
@@ -38,23 +38,23 @@ pub struct MutationNode {
     pub raw_bytes: Vec<u8>,
 }
 
-/// Generates opaque predicates and junk instructions.
-/// Focuses on preserving EFLAGS to avoid breaking conditional jumps.
+/// Generates opaque junk instructions focused on preserving execution state.
+/// Ensures EFLAGS and volatile registers are restored to maintain logical integrity.
 fn generate_opaque_junk(count: usize) -> Vec<Instruction> {
     let mut rng = rand::rng();
     let mut junk = Vec::with_capacity(count * 4);
 
-    // Using scratch registers that are less likely to hold critical pointers in small blocks
+    // Volatile scratch registers used for junk operations
     let volatile_regs = [Register::R10, Register::R11, Register::R12];
 
     for _ in 0..count {
         let reg = volatile_regs[rng.random_range(0..volatile_regs.len())];
 
-        // Context sandwich: Save state
+        // Context Sandwich: State Preservation
         junk.push(Instruction::with1(Code::Push_r64, reg).unwrap());
         junk.push(Instruction::with(Code::Pushfq));
 
-        // Polymorphic junk variety
+        // Polymorphic Instruction Variety
         match rng.random_range(0..4) {
             0 => junk.push(Instruction::with2(Code::Xor_rm64_r64, reg, reg).unwrap()),
             1 => junk.push(
@@ -71,13 +71,14 @@ fn generate_opaque_junk(count: usize) -> Vec<Instruction> {
             ),
         }
 
-        // Restore state
+        // Context Sandwich: State Restoration
         junk.push(Instruction::with(Code::Popfq));
         junk.push(Instruction::with1(Code::Pop_r64, reg).unwrap());
     }
     junk
 }
 
+/// Main shredding logic: Decodes, fragments, and randomizes instruction layout.
 pub fn shred(
     payload: &[u8],
     original_rip: u64,
@@ -88,14 +89,14 @@ pub fn shred(
 
     if instructions.is_empty() {
         return Err(ShredderError::EncodingError(
-            "Zero valid instructions decoded".into(),
+            "Zero valid instructions decoded: potential ISA mismatch".into(),
         ));
     }
 
     let n = instructions.len();
     let mut rng = rand::rng();
 
-    // Non-linear physical layout generation
+    // Generate non-linear physical layout (Entropy-based shuffling)
     let mut physical_map: Vec<usize> = (0..n).collect();
     physical_map.shuffle(&mut rng);
 
@@ -108,12 +109,12 @@ pub fn shred(
     for (idx, ins) in instructions.iter().enumerate() {
         let mut node_ins = Vec::new();
 
-        // 1. Prologue Junk
+        // 1. Prologue Mutation (Junk Insertion)
         if config.use_junk {
             node_ins.extend(generate_opaque_junk(config.junk_count));
         }
 
-        // 2. Real Instruction (with IP-relative fixups)
+        // 2. Original Instruction with IP-Relative fixups
         let mut patched_ins = *ins;
         if patched_ins.is_call_near()
             || patched_ins.is_jmp_near()
@@ -126,7 +127,7 @@ pub fn shred(
         }
         node_ins.push(patched_ins);
 
-        // 3. Epilogue / Control Flow Linker
+        // 3. Control Flow Linker (Jump-to-next-node)
         if idx < n - 1 {
             let next_rip = virtual_to_physical_rip[idx + 1];
             node_ins.push(Instruction::with_branch(Code::Jmp_rel32_64, next_rip).unwrap());
@@ -134,7 +135,7 @@ pub fn shred(
         logical_nodes.push(node_ins);
     }
 
-    // Encoding phase
+    // Encoding Phase: Final binary block generation
     let mut blocks = Vec::new();
     for (pos, &idx) in physical_map.iter().enumerate() {
         let rip = config.base_ip + (pos as u64 * config.block_separation);
@@ -161,6 +162,7 @@ pub fn shred(
     })
 }
 
+/// Aggregates mutated nodes into a final binary stream with INT3 padding.
 pub fn assemble_mutated_flow(shredded: &ShreddedCode, base_rva: u64) -> Vec<u8> {
     let stream_end = shredded
         .nodes
@@ -169,7 +171,8 @@ pub fn assemble_mutated_flow(shredded: &ShreddedCode, base_rva: u64) -> Vec<u8> 
         .max()
         .unwrap_or(0);
 
-    let mut stream = vec![0xCCu8; stream_end]; // Using INT3 (0xCC) for padding, more common in debug/research
+    // Padding with INT3 (0xCC) to disrupt automated linear disassemblers
+    let mut stream = vec![0xCCu8; stream_end];
     for node in &shredded.nodes {
         let offset = (node.rip - base_rva) as usize;
         stream[offset..offset + node.raw_bytes.len()].copy_from_slice(&node.raw_bytes);
