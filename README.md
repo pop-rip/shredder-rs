@@ -26,4 +26,4 @@ This project is developed for **educational and research purposes only**. Its go
 
 ## Build Requirements
 - Rust 1.70+ (Stable)
-- MSVC Linker (Required for PE reconstruction on Windows)
+- MSVC Toolchain (Required for stable Windows builds and PE handling)
